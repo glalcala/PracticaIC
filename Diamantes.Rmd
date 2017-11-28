@@ -118,6 +118,19 @@ Donde p25 y p75 con los percentiles 25 y 75 de la distribución, RI es el Rango 
   
 Si nos enfocamos en las formas de la distribución de cada variable, podemos observar que la variable _price_ es la que tiene mayor variabilidad (por tener un Coeficiente de Variación más grande), la variable _depth_ es la más simétrica (Coeficiente de simetría cercano a 0) pero es la que tiene colas más pesadas (Curtosis de 8.74).  
   
+```{r qqplot, echo=T,fig.width=14, fig.height=8}
+par(mfrow=c(1,3))
+qqnorm((diamonds$price),main="Gráfica Cuantil-Cuantil de Precio",xlab="Cuantiles teóricos",ylab="Cuantiles de la muestra")
+qqline((diamonds$price))
+qqnorm((diamonds$carat),main="Gráfica Cuantil-Cuantil de Carat",xlab="Cuantiles teóricos",ylab="Cuantiles de la muestra")
+qqline((diamonds$carat))
+qqnorm((diamonds$depth),main="Gráfica Cuantil-Cuantil de Depth",xlab="Cuantiles teóricos",ylab="Cuantiles de la muestra")
+qqline((diamonds$depth))
+```
+  
+  
+De las gráficas cuantil-cuantil podemos concluir que las variables no siguen una distribución Normal y refuerza lo que habíamos observado con los estadísticos de momentos que hicimos anteriormente (en particular, las colas pesadas de la distribución de la variable _Depth_).  
+  
 Ahora grafiquemos los histogramas, manteniendo la frecuencia en la misma escala para comparar la altura de las gráficas.
 ```{r hist_cont, echo=T,fig.width=14, fig.height=8}
 par(mfrow=c(1,3))
@@ -140,7 +153,7 @@ hist(diamonds$depth, col =354, main="Histograma de Profundidad",freq=F,breaks=40
 curve(dnorm(x, mean=mean(diamonds$depth), sd=sd(diamonds$depth)), add=TRUE)
 ```
   
-Se observa que ninguna de las variables se ajusta bien a la densidad de una distribución normal, aunque la variable _depth_ tiene una forma similar aunque más punteaguda y con colas más pesadas (por las estadísticas descriptivas) lo que podría aproximarse a través de una _t-student_.
+Se observa que ninguna de las variables se ajusta bien a la densidad de una distribución normal, aunque la variable _depth_ tiene una forma similar pero más punteaguda y con colas más pesadas (por las estadísticas descriptivas) lo que podría aproximarse a través de una _t-student_.
   
 
 ### Relación entre variables.
@@ -178,6 +191,7 @@ colnames(var1) <- c("cut","clarity","color","price","carat","depth")
 kable(round(cor(x=var1,method="spearman"),2),caption="Correlación de Spearman para variables categóricas y continuas discretizadas")
 ```
   
+   
 Esto nos permite identificar correlaciones positivas entre precio y color y negativas entre precio y las variables corte y claridad (interesante y ligeramente contraintuitivo).
   
 Hay distintas formas de analizar si una variable categórica tiene relación con las variables continuas, a continuación exploraremos algunas alternativas y propondremos relaciones.  
@@ -269,7 +283,7 @@ kable(diamonds %>%
   caption = "Estadísticas de precio por grupo de Claridad")
 ```
   
-De las tablas anteriores se muestra nuevamente que el Color es la variable que más se relaciona con el precio, mientras que el corte y la claridad no parecen tener una relación tan directa. En particular, el Corte _Fair_ tiene un precio promedio mayor al Corte _Good_, veamos is esto es estadísticamente significativo: 
+De las tablas anteriores parece que Color tiene una relación más fuerte con precio (pues la media, a excepción del primer nivel, crece conforme mejoramos el color del diamante), mientras que el corte y la claridad no parecen tener una relación tan directa. En particular, el Corte _Fair_ tiene un precio promedio mayor al Corte _Good_, veamos is esto es estadísticamente significativo: 
   
 **NOTA:** Si somos rigurosos, la prueba que debemos realizar dado que los datos no se distribuyen normal (lo vimos por la curtosis y el coeficiente de asimetría) es contrastar el estadístico con una distribución Normal, sin embargo, podemos utilizar la prueba $t$ dado que los grados de libertad que tendrán nuestros estadísticos $t$ aproximarán bastante a la Normal.  
 
@@ -300,4 +314,19 @@ t.test(cut_fair,cut_good, var.equal=FALSE, paired=FALSE,conf.level=.95)
 ```
   
 Podemos concluir entonces que las medias no son iguales con un _p-value_ de prácticamente 0.  
+
+### Conclusiones  
   
+Después de revisar la base de datos podemos concluir que existe una fuerte asociación lineal entre la variable _price_ y la variable _carat_, por lo que podríamos proponer que para explicar el precio de un diamante la variable más importante sí es su quilataje, sin embargo, no es la única variable que influye y la relación que tiene con las categorías de _color_, _cut_ y _clarity_ también es importante. Después de explorar las relaciones de todas las variables proponemos el siguiente cuadro que visualiza la mayor interacción de variables en un gráfico que al principio parece muy saturado pero da mucho sentido:
+  
+El scatterplot de _price_ contra _carat_ es obvio por ser las variables que presentan mayor asociación lineal. Las dimensiones de _cut_ y _clarity_ nos permiten comparar las densidades de estas dos variables (en los extremos hay menor cantidad de puntos, lo que explica porqué hay menos diamantes de baja claridad y buen corte o muy pocos diamantes de corte "Fair" y claridad _IF_), esto es un primer _insight_ que nos da mayor entendimiento de los datos. La otra relación que es evidente es la relación entre las variables _color_ y _carat_: los diamantes de mayor _carat_ tienen mejor color. Si observamos todos los diagramas de dispersión, el color _Excelente_ que agrupa los niveles _I_ y _J_ esta generalmente por arriba y el grupo _Medio_ que agrupa _D_, _E_ y _F_ está por abajo. También se aprecia que, para un mismo corte (es decir, por columna), los diamantes tienen mayor claridad conforme decrece el _carat_ (esto es, las gráficas van _aplastándose_ cuando ves las columnas de arriba a abajo) y la relación del corte con el precio, para un mismo nivel de claridad (viendo filas de izquierda a derecha) en general aumenta cuando ves la densidad de puntos que incrementa a la derecha del gráfico.
+  
+```{r relpc_color,fig.width=16,fig.height=16}
+diamonds %>% mutate(colorF = factor(ifelse(color %in% c("D","E","F"),"Medio",ifelse(color %in% c("G","H"),"Alto","Excelente")),levels = c("Medio","Alto","Excelente"),ordered=T)) %>% 
+  ggplot(aes(x = price, y = carat, color = colorF)) + 
+  geom_point(size = 2) +
+  facet_grid(clarity ~ cut) 
+```
+  
+
+
