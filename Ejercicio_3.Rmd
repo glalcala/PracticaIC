@@ -1,0 +1,308 @@
+---
+title: "Análisis de meteoritos desde 860 hasta 2016"
+
+output:
+  html_document:
+    code_folding: hide
+    number_sections: true
+    theme: "lumen"
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+```{r librerias, include=FALSE}
+library(dplyr)
+
+# Para sacar gráficas
+library(ggplot2)
+
+# Para la agrupar las gráficas
+if(!require(gridExtra)){
+  install.packages("gridExtra")
+  library(gridExtra)
+}
+
+# Para obtener la informacion de las coordenadas (pais, continente)
+if(!require(sp)){
+  install.packages("sp")
+  library(sp)
+}
+if(!require(rworldmap)){
+  install.packages("rworldmap")
+  library(rworldmap)
+}
+
+# Para mostrar los mapas 
+if(!require(leaflet)){
+  install.packages("leaflet")
+  library(leaflet)
+}
+
+# Para mostar tablas de datos
+if(!require(DT)){
+  install.packages("DT")
+  library(DT)
+}
+```
+
+```{r funciones auxiliares, include=FALSE}
+# Función sacada de https://stackoverflow.com/questions/21708488/get-country-and-continent-from-longitude-and-latitude-point-in-r y adaptada para que devuelva la informacion que interesa para el ejercicio.
+coordsPaisYContinente = function(points)
+{  
+  countriesSP <- getMap(resolution = 'low')
+  pointsSP <- SpatialPoints(points, proj4string=CRS(proj4string(countriesSP)))  
+  
+  over(pointsSP, countriesSP) %>% 
+    select(pais = ADMIN, continente = REGION)
+}
+```
+
+# Datos
+```{r obtencion de datos}
+meteoritos <- read.csv(
+  file = "datos/meteorite-landings.csv",
+  stringsAsFactors = F)
+
+meteoritos <- meteoritos %>% 
+  mutate(
+    nametype = as.factor(nametype),
+    recclass = as.factor(recclass),
+    fall = as.factor(fall),
+    GeoLocation = as.factor(GeoLocation))
+```
+Los datos expuestos en este documento han sido sacados del data set "Meteorite Landings" [(link a Kaggle)](https://www.kaggle.com/nasa/meteorite-landings). Haciendo caso a la recomendación que hacen, limpiaremos los datos que están fuera del rango de años 860 y 2016, y los que tienen una longitud y/o latitud válida. También se indicaba en esta página que las localizaciones que tinen coordenadas (0, 0) deberían ser tratadas como NA (Aunque muchas de ellas fueron localizadas en la Antártida), pero igualmente han sido descartadas para el estudio.
+
+```{r limpieza de los datos}
+meteoritos <- meteoritos %>%
+  filter(between(year, 860, 2016) &
+           between(reclong, -180, 180) &
+           (reclat != 0 | reclong != 0)) 
+```
+
+# Análisis inicial de los datos
+El set de datos contiene las siguientes columnas:
+
+- **name**: nombre del meteorito.
+- **id**: identificador numérico del meteorito.
+- **recclass**: clase del meteorito, en base a las caracterísicas del meteorito.
+- **mass**: masa del meteorio.
+- **fall**: variable categórica que indica si la caida del meteorito fue presenciada (*Fell*) o no (*Found*).
+- **year**: año del impacto.
+- **reclat**: latitud del lugar de impacto.
+- **reclon**: longitud del lugar de impacto.
+- **GeoLocation**: coordenadas del lugar de impacto
+
+## Variables categoricas
+```{r analisis variables categoricas, comment=""}
+meteoritos %>% 
+  select(recclass, fall) %>% 
+  summary()
+```
+
+## Variables numéricas
+```{r analisis variables numericas, comment=""}
+meteoritos %>% 
+  select(mass, year, reclat, reclong) %>% 
+  summary()
+```
+
+## Distribución de los impactos en el tiempo
+```{r distribucion de los años}
+ggplot(meteoritos, aes(year, fill = fall)) +
+  geom_histogram(binwidth = 10) +
+  scale_fill_manual(
+    name = "Modo de descubrimiento",
+    values = heat.colors(2),
+    drop = FALSE)
+```
+
+## Proporción de impactos vistos
+```{r Proporcion de meteoritos encontrados}
+as.data.frame(table(meteoritos$fall)) %>% 
+  ggplot(
+    aes(x = "",
+        y = Freq,
+        fill = levels(meteoritos$fall))) +
+  geom_bar(
+    width = 1,
+    stat = "identity") +
+  scale_fill_manual(
+    name = "Modo de descubrimiento",
+    values = heat.colors(2),
+    drop = FALSE) +
+  labs(
+    title = "% Modo de descubrimiento de los meteoritos",
+    x = "",
+    y = "") +
+  coord_polar("y", start = 0) +   
+  theme(axis.text.x = element_blank()) +
+  geom_text(aes(label = paste(round(Freq / nrow(meteoritos) * 100, 2), "%")),
+            position = position_stack(vjust = 0.5),
+            size = 4) +
+  theme_void() 
+```
+
+# Adición de datos complementarios
+```{r completado datos}
+coordenadas <- data.frame(
+  long = meteoritos$reclong,
+  lat = meteoritos$reclat)
+
+paisYContinente <- coordsPaisYContinente(coordenadas)
+
+meteoritos$pais <- paisYContinente$pais
+meteoritos$continente <- paisYContinente$continente
+
+meteoritos$Norte_Sur <- ifelse(meteoritos$reclat > 0, "Norte", "Sur")
+meteoritos$Este_Oeste <- ifelse(meteoritos$reclong > 0, "Este", "Oeste")
+meteoritos$cuadrante <- paste0(substr(meteoritos$Norte_Sur, 1, 1),
+                               substr(meteoritos$Este_Oeste, 1, 1),
+                               "")
+
+meteoritos$Norte_Sur <- as.factor(meteoritos$Norte_Sur)
+meteoritos$Este_Oeste <- as.factor(meteoritos$Este_Oeste)
+meteoritos$cuadrante <- as.factor(meteoritos$cuadrante)
+```
+
+He decidido añadir el pais y el continente donde se produjo cada impacto.
+Para ello he hecho uso de una función que encontré en [stack overflow](https://stackoverflow.com/questions/21708488/get-country-and-continent-from-longitude-and-latitude-point-in-r). Esta función devuelve, a partir de las coordenadas, información sobre ese punto, en concreto hice para que devolviera el pais y el continente.
+
+Asímismo, se ha insertado una variable categórica que indica si la ubicación se encuentra en el Norte o el Sur y otra para saber si es en el Este o el Oeste. Y otra que en combinación de las dos anteriores nos da el cuadrante.
+
+# Proporción de impactos según el lugar
+```{r Proporción de impactos según el lugar}
+plot.NorteSur <- 
+  as.data.frame(table(meteoritos$Norte_Sur)) %>% 
+  ggplot(
+    aes(x = "",
+        y = Freq,
+        fill = levels(meteoritos$Norte_Sur))) +
+  geom_bar(
+    width = 1,
+    stat = "identity") +
+  scale_fill_manual(
+    name = "Hemisferios horizontales",
+    values = heat.colors(2),
+    drop = FALSE) +
+  labs(
+    title = "% de meteoritos en cada hemisferio",
+    x = "",
+    y = "") +
+  coord_polar("y", start = 0) +   
+  theme(axis.text.x = element_blank()) +
+  geom_text(aes(label = paste(round(Freq / nrow(meteoritos) * 100, 2), "%")),
+            position = position_stack(vjust = 0.5),
+            size = 4) +
+  theme_void()
+
+plot.EsteOeste <- 
+  as.data.frame(table(meteoritos$Este_Oeste)) %>% 
+  ggplot(
+    aes(x = "",
+        y = Freq,
+        fill = levels(meteoritos$Este_Oeste))) +
+  geom_bar(
+    width = 1,
+    stat = "identity") +
+  scale_fill_manual(
+    name = "Hemisferios verticales",
+    values = heat.colors(2),
+    drop = FALSE) +
+  labs(
+    title = "% de meteoritos en cada hemisferio",
+    x = "",
+    y = "") +
+  coord_polar("y", start = 0) +   
+  theme(axis.text.x = element_blank()) +
+  geom_text(aes(label = paste(round(Freq / nrow(meteoritos) * 100, 2), "%")),
+            position = position_stack(vjust = 0.5),
+            size = 4) +
+  theme_void()
+
+plot.Cuadrante <- 
+  as.data.frame(table(meteoritos$cuadrante)) %>% 
+  ggplot(
+    aes(x = "",
+        y = Freq,
+        fill = levels(meteoritos$cuadrante))) +
+  geom_bar(
+    width = 1,
+    stat = "identity") +
+  scale_fill_manual(
+    name = "Cuadrantes",
+    values = heat.colors(4),
+    drop = FALSE) +
+  labs(
+    title = "% de meteoritos en cada cuadrante",
+    x="",
+    y="") +
+  coord_polar("y", start=0) +   
+  theme(axis.text.x=element_blank()) +
+  geom_text(aes(label = paste(round(Freq / nrow(meteoritos) * 100, 2), "%")),
+            position = position_stack(vjust = 0.5),
+            size = 4) +
+  theme_void()
+
+grid.arrange(arrangeGrob(plot.NorteSur, plot.EsteOeste, ncol=2),
+             plot.Cuadrante,
+             ncol = 1)
+```
+
+# Ranking de impactos por continente
+```{r}
+as.data.frame(table(meteoritos$continente)) %>% 
+  arrange(-Freq) %>% 
+  DT::datatable(
+    colnames = c("Continente", "Número de impactos"),
+    rownames = F,
+    filter = 'top')
+```
+
+# Ranking de impactos por pais
+```{r}
+as.data.frame(table(as.character(meteoritos$pais))) %>% 
+  arrange(-Freq) %>% 
+  DT::datatable(
+    colnames = c("Pais", "Número de impactos"),
+    rownames = F,
+    filter = 'top')
+```
+
+# Mayor impacto
+```{r}
+mayorImpacto <-
+  meteoritos %>% 
+  arrange(-mass) %>% 
+  head(1)
+```
+El mayor impacto registrado fue en el año `r mayorImpacto$year` en `r mayorImpacto$pais` (`r mayorImpacto$continente`). Tuvo una masa de `r mayorImpacto$mass/1000000` toneladas, es de la clase `r mayorImpacto$recclass` y su nombre es `r mayorImpacto$name` (para más información [clica aquí](https://en.wikipedia.org/wiki/Hoba_meteorite)).
+
+# Mapamundi con los impactos
+En este mapa se pueden ver cada uno de los impactos registrados. Los puntos amarillos son aquellos meteoritos que fueron encontrados y los rojos son los que se vieron caer. El tamaño del círculo de cada impacto es proporcional a la masa del mismo y, si se pasa por encima, se podrá ver el nombre y el año del descubrimiento/impacto.
+```{r}
+colour <- colorFactor(heat.colors(2), domain = meteoritos$fall)
+
+leaflet(meteoritos) %>% 
+  addProviderTiles("Esri.WorldStreetMap") %>%
+  addCircles(lng = ~reclong, 
+             lat = ~reclat,
+             radius = ~(mass/1000), # En kilogramos
+             color = ~colour(fall),
+             label = ~paste0(name, " (", year,")")) %>%
+  addLegend("bottomright", 
+            pal = colour, 
+            values = ~fall,
+    title = "fall",
+    opacity = 1) %>%
+  addMiniMap(
+    position = "bottomleft",
+    toggleDisplay = TRUE)
+```
+

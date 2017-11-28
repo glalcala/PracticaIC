@@ -1,0 +1,303 @@
+---
+title: "Diamantes (Práctica AFI)"
+author: "Gerardo Alcalá"
+output:
+  html_document:
+    code_folding: hide
+    theme: "lumen"
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(knitr)
+library(dplyr)
+library(moments)
+library(caret)
+library(Hmisc)
+data(diamonds)
+```
+
+## Análisis descriptivo: Dataset de diamantes.  
+  
+El Dataset de diamantes se encuentra disponible en (http://ggplot2.tidyverse.org/reference/diamonds.html)[http://ggplot2.tidyverse.org/reference/diamonds.html] y está compuesto por 53,940 diamantes de los cuales se dispone de los siguientes atributos:  
+  
+#### Lista de atributos del dataset.  
+* __Variables continuas:__
+    + price
+    + carat
+    + depth
+    + table
+    + x
+    + y
+    + z
+* __Variables categóricas:__  
+    + cut (ordinal)
+    + color (ordinal)
+    + clarity (ordinal)
+  
+  
+### Análisis exploratorio de los datos.  
+  
+Las variables categóricas de la base de datos tenemos tres ordinales. A continuación presentamos las tablas de frecuencias:  
+```{r var_cat, echo=T}
+kable(diamonds %>% group_by(cut) %>% summarise(Frecuencia=n(),Relativa=round(Frecuencia/nrow(diamonds)*100,2)))
+kable(diamonds %>% group_by(color) %>% summarise(Frecuencia=n(),Relativa=round(Frecuencia/nrow(diamonds)*100,2)))
+kable(diamonds %>% group_by(clarity) %>% summarise(Frecuencia=n(),Relativa=round(Frecuencia/nrow(diamonds)*100,2)))
+```
+  
+Si observamos los cortes, apenas el 12% de los diamantes tienen un corte _Fair_ o _Good_, lo que deja al 88% de los diamantes con cortes _Very Good_ o superiores.  
+La distribución de colores es más uniforme salvo por el color _J_ que sólo representa el 5% de los diamantes. 
+Por último, la claridad de los diamantes de la base de datos concentra más de la mitad en los niveles _SI2_, _SI1_ y _VS2_ (63%), con muy pocos diamantes del nivel mínimo _I1_ (1.3% solamente).
+  
+Gráficamente se pueden apreciar las frecuencias por atributo de cada variable, todas comparadas en la misma escala:  
+```{r var_cat2, echo=T,fig.width=14, fig.height=8}
+par(mfrow=c(1,3))
+barplot(table(diamonds$cut),xlab="Calidad del corte", 
+        ylab="% Frecuencia",col = 484,lwd = 2,cex.names =1, 
+        cex.axis = 1, ylim=c(0,25000))
+
+barplot(table(diamonds$color),xlab="Color del diamante", 
+        ylab="% Frecuencia",col = 621,lwd = 2,cex.names =1, 
+        cex.axis = 1, ylim=c(0,25000))
+
+barplot(table(diamonds$clarity),xlab="Claridad del diamante", 
+        ylab="% Frecuencia",col = 123,lwd = 2,cex.names =1, 
+        cex.axis = 1, ylim=c(0,25000))
+
+```
+  
+En lo que respecta a las variables continuas, nos vamos a enfocar en la relación que tienen las variables _price_, _depth_ y _carat_ porque _depth_ es una función de las variables _x_,_y_,_z_ y _table_.  
+  
+Los estadísticos más relevantes de cada variable son:
+
+```{r var_cont, echo=T}
+kable(diamonds %>% summarise(media = round(mean(price),2),
+                       min = round(min(price),2),
+                       p25 = round(quantile(price,.25),2),
+                       mediana = round(median(price),2),
+                       p75 = round(quantile(price,.75),2),
+                       max = round(max(price),2),
+                       recorrido = max - min,
+                       RI = p75 - p25,
+                       Desv.Est = round(sd(price),2),
+                       CV = round(Desv.Est/abs(media),2),
+                       Simetría = round(skewness(price),2),
+                       Curtosis = round(kurtosis(price),2)),align="cccccccccccc",caption="Estadísticas descriptivas de la variable _Price_")
+
+kable(diamonds %>% summarise(media = round(mean(carat),2),
+                       min = round(min(carat),2),
+                       p25 = round(quantile(carat,.25),2),
+                       mediana = round(median(carat),2),
+                       p75 = round(quantile(carat,.75),2),
+                       max = round(max(carat),2),
+                       recorrido = max - min,
+                       RI = p75 - p25,
+                       Desv.Est = round(sd(carat),2),
+                       CV = round(Desv.Est/abs(media),2),
+                       Simetría = round(skewness(carat),2),
+                       Curtosis = round(kurtosis(carat),2)),align="cccccccccccc",caption="Estadísticas descriptivas de la variable _Carat_")
+
+kable(diamonds %>% summarise(media = round(mean(depth),2),
+                       min = round(min(depth),2),
+                       p25 = round(quantile(depth,.25),2),
+                       mediana = round(median(depth),2),
+                       p75 = round(quantile(depth,.75),2),
+                       max = round(max(depth),2),
+                       recorrido = max - min,
+                       RI = p75 - p25,
+                       Desv.Est = round(sd(depth),2),
+                       CV = round(Desv.Est/abs(media),2),
+                       Simetría = round(skewness(depth),2),
+                       Curtosis = round(kurtosis(depth),2)),align="cccccccccccc",caption="Estadísticas descriptivas de la variable _Depth_")
+```
+  
+Donde p25 y p75 con los percentiles 25 y 75 de la distribución, RI es el Rango Intercuartílico y CV es el Coeficiente de Variación.
+  
+Si nos enfocamos en las formas de la distribución de cada variable, podemos observar que la variable _price_ es la que tiene mayor variabilidad (por tener un Coeficiente de Variación más grande), la variable _depth_ es la más simétrica (Coeficiente de simetría cercano a 0) pero es la que tiene colas más pesadas (Curtosis de 8.74).  
+  
+Ahora grafiquemos los histogramas, manteniendo la frecuencia en la misma escala para comparar la altura de las gráficas.
+```{r hist_cont, echo=T,fig.width=14, fig.height=8}
+par(mfrow=c(1,3))
+hist(diamonds$price, col="red", main="Histograma de Price",freq=T,ylim=c(0,18000),breaks=40, xlab="rango de precios",ylab="Frecuencia")
+
+hist(diamonds$carat, col=981, main="Histograma de Carat",freq=T,ylim=c(0,18000),breaks=40, xlab="rango de carat",ylab="Frecuencia")
+hist(diamonds$depth, col =354, main="Histograma de Depth",freq=T,ylim=c(0,18000),breaks=40,xlab="rango de profundidad",ylab="Frecuencia")
+
+```
+  
+También graficamos los histogramas de frecuencia relativa y ajustamos la densidad normal (teórica) para observar si siguen una distribución gaussiana o no.  
+
+```{r hist_fr, echo=T,fig.width=14,fig.height=8}
+par(mfrow=c(1,3))
+hist(diamonds$price, col="red", main="Histograma de Price",freq=F,breaks=40, xlab="rango de precios",ylab="Frecuencia Relativa")
+curve(dnorm(x, mean=mean(diamonds$price), sd=sd(diamonds$price)), add=TRUE)
+hist(diamonds$carat, col=981, main="Histograma de Carat",freq=F,breaks=40, xlab="rango de carat",ylab="Frecuencia Relativa")
+curve(dnorm(x, mean=mean(diamonds$carat), sd=sd(diamonds$carat)), add=TRUE)
+hist(diamonds$depth, col =354, main="Histograma de Profundidad",freq=F,breaks=40,xlab="rango de carat",ylab="Frecuencia Relativa")
+curve(dnorm(x, mean=mean(diamonds$depth), sd=sd(diamonds$depth)), add=TRUE)
+```
+  
+Se observa que ninguna de las variables se ajusta bien a la densidad de una distribución normal, aunque la variable _depth_ tiene una forma similar aunque más punteaguda y con colas más pesadas (por las estadísticas descriptivas) lo que podría aproximarse a través de una _t-student_.
+  
+
+### Relación entre variables.
+  
+Para estudiar la relación que existe entre las variables primero exploraremos los diagramas de dispersión de las variables continuas:  
+```{r dispr, echo=T,fig.width=14,fig.height=8}
+pairs(diamonds[,c("price","carat","depth")],main = "Diamantes - Dispersión",
+      pch = 21,col="black", lower.panel = NULL)
+```
+  
+De las gráficas de dispersión se observa una relación entre el precio del diamante y el carat; mientras que las variables precio y profundidad no muestran una relación tan clara, como tampoco lo hacen las variables profundidad y carat. Si calculamos las correlaciones corroboramos lo antes dicho: la correlación entre precio y carat es de 0.92 mientras que las demás es muy cercana a 0.
+
+```{r cor, echo=T}
+kable(round(cor(diamonds[,c("price","carat","depth")]),2),caption="Correlación de Pearson para variables continuas")
+```
+  
+En  lo que respecta a las variables categóricas podemos calcular la correlación de _spearman_ para conocer si existe alguna relación entre ellas.  
+```{r cor_s, echo = T}
+var1 <- cbind(as.numeric(diamonds$cut),as.numeric(diamonds$clarity),as.numeric(diamonds$color))
+colnames(var1) <- c("cut","clarity","color")
+kable(round(cor(x=var1,method="spearman"),2),caption="Correlación de Spearman para variables categóricas")
+```
+  
+De la tabla anterior se desprende que hay una asociación positiva entre el corte (_cut_) y la claridad del diamante (_clarity_), mientras que el color no correla tanto con las otras variables.  
+  
+Si queremos calcular la correlaciòn de variables continuas y categóricas primero debemos agrupar las variables continuas. Haremos 9 grupos de las variables continuas y calcularemos la correlación de _spearman_.
+
+```{r cor_s2, echo = T}
+price_g <- cut2(diamonds$price,g=9)
+carat_g <- cut2(diamonds$carat,g=9)
+depth_g <- cut2(diamonds$depth,g=9)
+var1 <- cbind(as.numeric(diamonds$cut),as.numeric(diamonds$clarity),as.numeric(diamonds$color),
+              price_g,carat_g,depth_g)
+colnames(var1) <- c("cut","clarity","color","price","carat","depth")
+kable(round(cor(x=var1,method="spearman"),2),caption="Correlación de Spearman para variables categóricas y continuas discretizadas")
+```
+  
+Esto nos permite identificar correlaciones positivas entre precio y color y negativas entre precio y las variables corte y claridad (interesante y ligeramente contraintuitivo).
+  
+Hay distintas formas de analizar si una variable categórica tiene relación con las variables continuas, a continuación exploraremos algunas alternativas y propondremos relaciones.  
+  
+```{r boxplot, echo=T,fig.width=14,fig.height=8}
+par(mfrow=c(1,3))
+boxplot(price ~ cut,data=diamonds,main="Precio contra corte",ylab="Precio",xlab="Cut",col=484)
+boxplot(price ~ color,data=diamonds,main="Precio contra color",ylab="Precio",xlab="Color",col=621)
+boxplot(price ~ clarity,data=diamonds,main="Precio contra claridad",ylab="Precio",xlab="Claridad",col=123)
+```
+  
+De las gráficas anteriores se observan una gran cantidad de _outliers_ para la variable precio, por lo que es conveniente seguir explorando las relaciones con otras visualizaciones.  
+  
+```{r denscut,echo=T,fig.width=10,fig.height=4}
+
+print("Densidad del precio por cada grupo de Corte")
+featurePlot(x = diamonds[, c("price")], 
+            y = diamonds$cut,
+            plot = "density", 
+            ## Pass in options to xyplot() to 
+            ## make it prettier
+            scales = list(x = list(relation="free"), 
+                          y = list(relation="free")), 
+            adjust = 1.5, 
+            pch = "", 
+            layout = c(1, 1), 
+            auto.key = list(columns = 5))
+
+print("Densidad del precio por cada grupo de Color")
+featurePlot(x = diamonds[, c("price")], 
+            y = diamonds$color,
+            plot = "density", 
+            ## Pass in options to xyplot() to 
+            ## make it prettier
+            scales = list(x = list(relation="free"), 
+                          y = list(relation="free")), 
+            adjust = 1.5, 
+            pch = "", 
+            layout = c(1, 1), 
+            auto.key = list(columns = 7))
+
+print("Densidad del precio por cada grupo de Claridad")
+featurePlot(x = diamonds[, c("price")], 
+            y = diamonds$clarity,
+            plot = "density", 
+            ## Pass in options to xyplot() to 
+            ## make it prettier
+            scales = list(x = list(relation="free"), 
+                          y = list(relation="free")), 
+            adjust = 1.5, 
+            pch = "", 
+            layout = c(1, 1), 
+            auto.key = list(columns = 8))
+```
+  
+Nuevamente nos damos algunas ideas de las relaciones pero seguimos sin ser capaces de concluir mucho con las gráficas solamente, por lo que debemos realizar algunas pruebas estadísticas para contrastar hipótesis. Veamos primero las medias del precio agrupadas por cada una de las variables categóricas.
+```{r medias, echo=T}
+kable(diamonds %>% 
+  group_by(cut) %>% 
+  summarise(cuenta = n(),
+            precio_medio = round(mean(price),2),
+            predio_mediana = round(median(price),2),
+            sd_precio = round(sd(price),2),
+            min_precio = round(min(price),2),
+            max = round(max(price),2)
+            ),
+  caption = "Estadísticas de precio por grupo de Corte")
+
+kable(diamonds %>% 
+  group_by(color) %>% 
+  summarise(cuenta = n(),
+            precio_medio = round(mean(price),2),
+            predio_mediana = round(median(price),2),
+            sd_precio = round(sd(price),2),
+            min_precio = round(min(price),2),
+            max = round(max(price),2)
+            ),
+  caption = "Estadísticas de precio por grupo de Color")
+
+kable(diamonds %>% 
+  group_by(clarity) %>% 
+  summarise(cuenta = n(),
+            precio_medio = round(mean(price),2),
+            predio_mediana = round(median(price),2),
+            sd_precio = round(sd(price),2),
+            min_precio = round(min(price),2),
+            max = round(max(price),2)
+            ),
+  caption = "Estadísticas de precio por grupo de Claridad")
+```
+  
+De las tablas anteriores se muestra nuevamente que el Color es la variable que más se relaciona con el precio, mientras que el corte y la claridad no parecen tener una relación tan directa. En particular, el Corte _Fair_ tiene un precio promedio mayor al Corte _Good_, veamos is esto es estadísticamente significativo: 
+  
+**NOTA:** Si somos rigurosos, la prueba que debemos realizar dado que los datos no se distribuyen normal (lo vimos por la curtosis y el coeficiente de asimetría) es contrastar el estadístico con una distribución Normal, sin embargo, podemos utilizar la prueba $t$ dado que los grados de libertad que tendrán nuestros estadísticos $t$ aproximarán bastante a la Normal.  
+
+```{r hypo_test,echo=T}
+cut_fair <- diamonds$price[diamonds$cut=="Fair"]
+cut_good <- diamonds$price[diamonds$cut=="Good"]
+t.test(cut_fair,cut_good, var.equal=FALSE, paired=FALSE,alternative="g",conf.level=.95)
+
+```
+  
+Por lo que rechazamos la hipótesis nula $\mu_{fair} < \mu_{good}$, así que la diferencia en medias es estadísticamente significativa.   
+También podemos probar si la claridad _IF_ tiene un mayor precio en promedio que los diamantes de claridad _VVS1_.
+
+```{r hypo_test2,echo=T}
+clar_IF <- diamonds$price[diamonds$clarity=="IF"]
+clar_VVS1 <- diamonds$price[diamonds$clarity=="VVS1"]
+t.test(clar_IF,clar_VVS1, var.equal=FALSE, paired=FALSE,alternative="g",conf.level=.95)
+```
+  
+Nuevamente rechazamos la hipótesis nula, que esta ves es $\mu_{IF} < \mu_{VVS1}$, así que estadísticamente podemos concluir que el precio promedio de los diamantes con claridad _IF_ es mayor que el de los diamantes con claridad _VVS1_.  
+  
+También comparamos la media del carat para los cortes _Fair_ y _Good_, pero en este caso queremos comprobar si $H_0: \mu_{fair} = \mu_{good}$:
+```{r hypo_test3,echo=T}
+cut_fair <- diamonds$carat[diamonds$cut=="Fair"]
+cut_good <- diamonds$carat[diamonds$cut=="Good"]
+t.test(cut_fair,cut_good, var.equal=FALSE, paired=FALSE,conf.level=.95)
+
+```
+  
+Podemos concluir entonces que las medias no son iguales con un _p-value_ de prácticamente 0.  
+  
